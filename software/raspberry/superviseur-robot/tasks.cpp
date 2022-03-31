@@ -28,6 +28,7 @@
 #define PRIORITY_TCAMERA 21
 #define PRIORITY_TBATTERY 10
 #define PRIORITY_TSURROBOT 25
+#define PRIORITY_TSURMONITOR 50
 
 /*
  * Some remarks:
@@ -104,6 +105,15 @@ void Tasks::Init() {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
+    if (err = rt_sem_create(&sem_errorComMonitor, NULL, 0, S_FIFO)) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    
+    if (err = rt_sem_create(&sem_startServer, NULL, 1, S_FIFO)) {
+        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     cout << "Semaphores created successfully" << endl << flush;
 
     /**************************************************************************************/
@@ -140,6 +150,11 @@ void Tasks::Init() {
     }
     
     if (err = rt_task_create(&th_surveillance_comrobot, "th_surveillance_comrobot", 0, PRIORITY_TSURROBOT, 0)) {
+        cerr << "Error task create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    
+    if (err = rt_task_create(&th_surveillance_commonitor, "th_surveillance_commonitor", 0, PRIORITY_TSURMONITOR, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
@@ -204,6 +219,11 @@ void Tasks::Run() {
         exit(EXIT_FAILURE);
     }
     
+    if (err = rt_task_start(&th_surveillance_commonitor, (void(*)(void*)) & Tasks::Surveillance_ComMonitor, this)) {
+        cerr << "Error task start: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
+    
     if (err = rt_task_start(&th_test, (void(*)(void*)) & Tasks::Test, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
@@ -241,18 +261,22 @@ void Tasks::ServerTask(void *arg) {
     /**************************************************************************************/
     /* The task server starts here                                                        */
     /**************************************************************************************/
-    rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-    status = monitor.Open(SERVER_PORT);
-    rt_mutex_release(&mutex_monitor);
+    while (1){
+        rt_sem_p(&sem_startServer, TM_INFINITE);
+        
+        rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+        status = monitor.Open(SERVER_PORT);
+        rt_mutex_release(&mutex_monitor);
 
-    cout << "Open server on port " << (SERVER_PORT) << " (" << status << ")" << endl;
+        cout << "Open server on port " << (SERVER_PORT) << " (" << status << ")" << endl;
 
-    if (status < 0) throw std::runtime_error {
-        "Unable to start server on port " + std::to_string(SERVER_PORT)
-    };
-    monitor.AcceptClient(); // Wait the monitor client
-    cout << "Rock'n'Roll baby, client accepted!" << endl << flush;
-    rt_sem_broadcast(&sem_serverOk);
+        if (status < 0) throw std::runtime_error {
+            "Unable to start server on port " + std::to_string(SERVER_PORT)
+        };
+        monitor.AcceptClient(); // Wait the monitor client
+        cout << "Rock'n'Roll baby, client accepted!" << endl << flush;
+        rt_sem_broadcast(&sem_serverOk);
+    }
 }
 
 /**
@@ -302,9 +326,7 @@ void Tasks::ReceiveFromMonTask(void *arg) {
 
         if (msgRcv->CompareID(MESSAGE_MONITOR_LOST)) {
             delete(msgRcv);
-            //===============================================================
-            //========================SEMAPHORE SUPERVISE MONITOR============
-            exit(-1);
+            rt_sem_v(&sem_errorComMonitor);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_COM_OPEN)) {
             rt_sem_v(&sem_openComRobot);
         } else if (msgRcv->CompareID(MESSAGE_ROBOT_START_WITHOUT_WD)) {
@@ -376,10 +398,13 @@ void Tasks::StartRobotTask(void *arg) {
         msgSend = robot.Write(robot.StartWithoutWD());
         rt_mutex_release(&mutex_robot);
         
-        if (msgSend->CompareID(MESSAGE_ANSWER_COM_ERROR)){
+        if (msgSend->CompareID(MESSAGE_ANSWER_COM_ERROR)|| msgSend->CompareID(MESSAGE_ANSWER_ROBOT_TIMEOUT)){
                 rt_mutex_acquire(&mutex_failure_counter, TM_INFINITE);
                 failure_counter++;
                 rt_mutex_release(&mutex_failure_counter);
+                if (failure_counter >= 3){
+                    rt_sem_v(&sem_errorComRobot);
+                }
             }
             else{
                 rt_mutex_acquire(&mutex_failure_counter, TM_INFINITE);
@@ -435,10 +460,13 @@ void Tasks::MoveTask(void *arg) {
             msg=robot.Write(new Message((MessageID)cpMove));
             rt_mutex_release(&mutex_robot);
             
-            if (msg->CompareID(MESSAGE_ANSWER_COM_ERROR)){
+            if (msg->CompareID(MESSAGE_ANSWER_COM_ERROR)|| msg->CompareID(MESSAGE_ANSWER_ROBOT_TIMEOUT)){
                 rt_mutex_acquire(&mutex_failure_counter, TM_INFINITE);
                 failure_counter++;
                 rt_mutex_release(&mutex_failure_counter);
+                if (failure_counter >= 3){
+                    rt_sem_v(&sem_errorComRobot);
+                }
             }
             else{
                 rt_mutex_acquire(&mutex_failure_counter, TM_INFINITE);
@@ -484,6 +512,11 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
 void Tasks::BatteryTask(void *arg) {
     int rs;
     Message *msg;
+    
+    cout << "Start " << __PRETTY_FUNCTION__ << endl << flush;
+    // Synchronization barrier (waiting that all tasks are starting)
+    rt_sem_p(&sem_barrier, TM_INFINITE);
+    
     rt_task_set_periodic(NULL, TM_NOW, 500000000);
     while (1) {
         
@@ -496,22 +529,24 @@ void Tasks::BatteryTask(void *arg) {
             msg=robot.Write(robot.GetBattery());
             rt_mutex_release(&mutex_robot);
             
-            if (msg->CompareID(MESSAGE_ANSWER_COM_ERROR)){
-                rt_mutex_acquire(&mutex_failure_counter, TM_INFINITE);
-                failure_counter++;
-                rt_mutex_release(&mutex_failure_counter);
-                /*if if (failure_counter >= 3){
-                    rt_sem_p(&sem_serverOk);
-                }*/
-            }
-            else{
+            if (msg->CompareID(MESSAGE_ROBOT_BATTERY_LEVEL)){
+                WriteInQueue(&q_messageToMon, msg);
                 rt_mutex_acquire(&mutex_failure_counter, TM_INFINITE);
                 failure_counter=0;
                 rt_mutex_release(&mutex_failure_counter);
             }
+            else if (msg->CompareID(MESSAGE_ANSWER_COM_ERROR) || msg->CompareID(MESSAGE_ANSWER_ROBOT_TIMEOUT)){
+                rt_mutex_acquire(&mutex_failure_counter, TM_INFINITE);
+                failure_counter++;
+                rt_mutex_release(&mutex_failure_counter);
+                if (failure_counter >= 3){
+                    rt_sem_v(&sem_errorComRobot);
+                }
+            }
            
-            cout<<msg->ToString()<<endl<<flush;
+            //cout<<msg->ToString()<<endl<<flush;
 
+            /*
             if (msg->CompareID(MESSAGE_ROBOT_BATTERY_LEVEL)){
                 //rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
                 //monitor.Write(msg);
@@ -521,6 +556,7 @@ void Tasks::BatteryTask(void *arg) {
             else {
                 throw std::runtime_error{"Error in battery message"};
             }
+             */
         }
 
 
@@ -555,18 +591,43 @@ void Tasks::Test(void *arg) {
 //To do
 //task pour verifier communication 
 void Tasks::Surveillance_ComRobot(void *arg) {
+    
+    rt_sem_p(&sem_errorComRobot, TM_INFINITE);
+    
     Message *msg;
-    msg = new Message(MESSAGE_ANSWER_COM_ERROR);
-    //===========================rt_sem_broadcast(&sem_serverOk);
-    while (1) { 
-        
-        if (failure_counter >= 3){
-            //rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-            //monitor.Write(msg);
-            //rt_mutex_release(&mutex_monitor);
-            WriteInQueue(&q_messageToMon, msg);
-            failure_counter=0;   
-        }
-    }
+    rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+    robot.Close();
+    rt_mutex_release(&mutex_robot);
+    msg = new Message(MESSAGE_ANSWER_COM_ERROR);        
+    //cout<<"ROBOT LOSṬ̣̣̣̣!!!!!!!!!!!!!!!!!!!!"<<endl;
+    WriteInQueue(&q_messageToMon, msg);
+    
+    failure_counter=0;
+    
+    rt_sem_broadcast(&sem_barrier);//initial state
+}
+
+void Tasks::Surveillance_ComMonitor(void *arg) {
+    
+    rt_sem_p(&sem_errorComMonitor, TM_INFINITE);
+    
+    cout<<"MONITOR LOSṬ̣̣̣̣!!!!!!!!!!!!!!!!!!!!"<<endl;
+    
+    Message *msg;
+    rt_mutex_acquire(&mutex_robot, TM_INFINITE);
+    robot.Write(robot.PowerOff());
+    cout<<"power off!!!!!!!!!!!!!!!!!!!!"<<endl;
+    robot.Close();
+    rt_mutex_release(&mutex_robot);
+    
+    rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
+    monitor.Close();
+    rt_mutex_release(&mutex_monitor);
+    
+    //disconnect camera
+    
+    rt_sem_v(&sem_startServer);
+    
+    
 }
 

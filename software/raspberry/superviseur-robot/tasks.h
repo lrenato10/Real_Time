@@ -79,6 +79,7 @@ private:
     RT_TASK th_move;
     RT_TASK th_battery;
     RT_TASK th_surveillance_comrobot;
+    RT_TASK th_surveillance_commonitor;
     RT_TASK th_test;
     
     /**********************************************************************/
@@ -98,6 +99,8 @@ private:
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
     RT_SEM sem_errorComRobot;
+    RT_SEM sem_errorComMonitor;
+    RT_SEM sem_startServer;
 
     /**********************************************************************/
     /* Message queues                                                     */
@@ -147,6 +150,11 @@ private:
      * @brief Thread handling control of the robot battery level.
      */
     void Surveillance_ComRobot(void *arg) ;
+    
+    /**
+     * @brief Thread handling control of the robot battery level.
+     */
+    void Surveillance_ComMonitor(void *arg) ;
     
     /**
      * @brief Thread handling control of test code.
