@@ -66,6 +66,7 @@ private:
     ComRobot robot;
     int robotStarted = 0;
     int move = MESSAGE_ROBOT_STOP;
+    int failure_counter=0;
     int start_with_wd = 0; // Si 0 -> demarrage sans wd
                           // sinon si 1 -> demarrage avec wd
     
@@ -79,6 +80,9 @@ private:
     RT_TASK th_startRobot;
     RT_TASK th_move;
     RT_TASK th_battery;
+    RT_TASK th_surveillance_comrobot;
+    RT_TASK th_surveillance_commonitor;
+    RT_TASK th_test;
     RT_TASK th_reload_wd;
     
     /**********************************************************************/
@@ -88,6 +92,7 @@ private:
     RT_MUTEX mutex_robot;
     RT_MUTEX mutex_robotStarted;
     RT_MUTEX mutex_move;
+    RT_MUTEX mutex_failure_counter;
     RT_MUTEX mutex_start_with_wd;
 
     /**********************************************************************/
@@ -97,15 +102,16 @@ private:
     RT_SEM sem_openComRobot;
     RT_SEM sem_serverOk;
     RT_SEM sem_startRobot;
+    RT_SEM sem_errorComRobot;
+    RT_SEM sem_errorComMonitor;
+    RT_SEM sem_startServer;
     RT_SEM sem_start_reload_wd;
-    
 
     /**********************************************************************/
     /* Message queues                                                     */
     /**********************************************************************/
     int MSG_QUEUE_SIZE;
     RT_QUEUE q_messageToMon;
-    RT_QUEUE q_messageToRobot;
     
     /**********************************************************************/
     /* Tasks' functions                                                   */
@@ -145,10 +151,25 @@ private:
      */
     void BatteryTask(void *arg) ;
     
-     /**
+    /**
+     * @brief Thread handling control of the robot battery level.
+     */
+    void Surveillance_ComRobot(void *arg) ;
+    
+    /**
+     * @brief Thread handling control of the robot battery level.
+     */
+    void Surveillance_ComMonitor(void *arg) ;
+    
+    /**
      * @brief Thread the reload of the wd on robot
      */
     void ReloadWDTask(void *arg) ;
+    
+    /**
+     * @brief Thread handling control of test code.
+     */
+    void Test(void *arg) ;
     
     /**********************************************************************/
     /* Queue services                                                     */
@@ -170,3 +191,4 @@ private:
 };
 
 #endif // __TASKS_H__ 
+
