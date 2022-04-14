@@ -82,7 +82,6 @@ private:
     RT_TASK th_battery;
     RT_TASK th_surveillance_comrobot;
     RT_TASK th_surveillance_commonitor;
-    RT_TASK th_test;
     RT_TASK th_reload_wd;
     
     /**********************************************************************/
@@ -166,10 +165,7 @@ private:
      */
     void ReloadWDTask(void *arg) ;
     
-    /**
-     * @brief Thread handling control of test code.
-     */
-    void Test(void *arg) ;
+
     
     /**********************************************************************/
     /* Queue services                                                     */

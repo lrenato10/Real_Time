@@ -170,10 +170,6 @@ void Tasks::Init() {
         exit(EXIT_FAILURE);
     }
             
-    if (err = rt_task_create(&th_test, "th_test", 0, PRIORITY_TBATTERY, 0)) {
-        cerr << "Error task create: " << strerror(-err) << endl << flush;
-        exit(EXIT_FAILURE);
-    }
     if (err = rt_task_create(&th_reload_wd, "th_reload_wd", 0, PRIORITY_TRELOADWD, 0)) {
         cerr << "Error task create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
@@ -239,10 +235,7 @@ void Tasks::Run() {
         exit(EXIT_FAILURE);
     }
     
-    if (err = rt_task_start(&th_test, (void(*)(void*)) & Tasks::Test, this)) {
-        cerr << "Error task start: " << strerror(-err) << endl << flush;
-        exit(EXIT_FAILURE);
-    }
+
     if (err = rt_task_start(&th_reload_wd, (void(*)(void*)) & Tasks::ReloadWDTask, this)) {
         cerr << "Error task start: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
@@ -599,49 +592,15 @@ void Tasks::BatteryTask(void *arg) {
                 }
             }
            
-            //cout<<msg->ToString()<<endl<<flush;
 
-            /*
-            if (msg->CompareID(MESSAGE_ROBOT_BATTERY_LEVEL)){
-                //rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-                //monitor.Write(msg);
-                //rt_mutex_release(&mutex_monitor);
-                WriteInQueue(&q_messageToMon, msg);
-            }
-            else {
-                throw std::runtime_error{"Error in battery message"};
-            }
-             */
+            
         }
 
 
     }
 }
     
-void Tasks::Test(void *arg) {
-    /*
-    int rs;
-    Message *msg;
-   
-    rt_task_set_periodic(NULL, TM_NOW, 500000000);
-    while (1) {
-        cout<<"test code"<<endl;
-        rt_task_wait_period(NULL);
-        rt_mutex_acquire(&mutex_robotStarted, TM_INFINITE);
-        rs = robotStarted;
-        rt_mutex_release(&mutex_robotStarted);
-        if (rs == 1) {
-            msg = new Message(MESSAGE_ANSWER_COM_ERROR);
-            rt_mutex_acquire(&mutex_monitor, TM_INFINITE);
-            monitor.Write(msg);
-            rt_mutex_release(&mutex_monitor);
 
-        }
-
-
-    }*/
-        
-}
 
 //To do
 //task pour verifier communication 
