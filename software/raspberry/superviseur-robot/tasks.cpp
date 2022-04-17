@@ -82,10 +82,10 @@ void Tasks::Init() {
         cerr << "Error mutex create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    //    if (err = rt_mutex_create(&mutex_start_with_wd, NULL)) {
-//        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
-//        exit(EXIT_FAILURE);
-//    }
+    if (err = rt_mutex_create(&mutex_start_with_wd, NULL)) {
+        cerr << "Error mutex create: " << strerror(-err) << endl << flush;
+        exit(EXIT_FAILURE);
+    }
     
     cout << "Mutexes created successfully" << endl << flush;
 
@@ -121,10 +121,7 @@ void Tasks::Init() {
         cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
         exit(EXIT_FAILURE);
     }
-    //    if (err = rt_sem_create(&sem_start_reload_wd, NULL, 0, S_FIFO)) {
-//        cerr << "Error semaphore create: " << strerror(-err) << endl << flush;
-//        exit(EXIT_FAILURE);
-//    }
+
     cout << "Semaphores created successfully" << endl << flush;
 
     /**************************************************************************************/
@@ -557,6 +554,9 @@ Message *Tasks::ReadInQueue(RT_QUEUE *queue) {
     return msg;
 }
 
+/**
+ * @brief Thread send periodically the robot battery level every 500ms.
+ */
 void Tasks::BatteryTask(void *arg) {
     int rs;
     Message *msg;
@@ -601,9 +601,9 @@ void Tasks::BatteryTask(void *arg) {
 }
     
 
-
-//To do
-//task pour verifier communication 
+/**
+ * @brief Thread monitoring the communication between the supervisor and the robot
+ */ 
 void Tasks::Surveillance_ComRobot(void *arg) {
    
     rt_sem_p(&sem_errorComRobot, TM_INFINITE);
@@ -613,7 +613,6 @@ void Tasks::Surveillance_ComRobot(void *arg) {
     robot.Close();
     rt_mutex_release(&mutex_robot);
     msg = new Message(MESSAGE_ANSWER_COM_ERROR);        
-    //cout<<"ROBOT LOSṬ̣̣̣̣!!!!!!!!!!!!!!!!!!!!"<<endl;
     WriteInQueue(&q_messageToMon, msg);
     
     failure_counter=0;
@@ -622,6 +621,9 @@ void Tasks::Surveillance_ComRobot(void *arg) {
  
 }
 
+/**
+ * @brief Thread monitoring the communication between the supervisor and the monitor
+ */ 
 void Tasks::Surveillance_ComMonitor(void *arg) {
     
     rt_sem_p(&sem_errorComMonitor, TM_INFINITE);
@@ -646,6 +648,9 @@ void Tasks::Surveillance_ComMonitor(void *arg) {
     
 }
 
+/**
+ * @brief Thread reload the watchdog when the user chooses the watchdog mode
+ */ 
 void Tasks::ReloadWDTask(void *arg) {
     int rs = 0;
     Message *msg_reloadwd;
